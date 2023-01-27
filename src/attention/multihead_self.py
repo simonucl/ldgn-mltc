@@ -11,13 +11,13 @@ class ScaledDotProductAttention(nn.Module):
         self.d_k = d_k
 
     def forward(self, Q, K, V, attn_mask=None):
-        scores = torch.matmul(Q, K.transpose(-1, -2)) / np.sqrt(self.d_k)
+        scores = torch.bmm(Q, K.transpose(-1, -2)) / np.sqrt(self.d_k)
         scores = torch.exp(scores)
         if attn_mask is not None:
             scores = scores * attn_mask
         attn = scores / (torch.sum(scores, dim=-1, keepdim=True) + 1e-8)
 
-        context = torch.matmul(attn.T, V)
+        context = torch.bmm(attn.transpose(-1, -2), V)
         return context, attn
 
 

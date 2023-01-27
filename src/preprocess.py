@@ -4,6 +4,11 @@ import codecs
 # import utils
 import pickle
 import numpy as np
+from torch.utils.data import Dataset
+import pandas as pd
+import torch
+from tqdm import trange
+import os
 
 # parser = argparse.ArgumentParser(description='preprocess.py')
 
@@ -40,7 +45,74 @@ import numpy as np
 #                     help="report status every this many sentences")
 
 # opt = parser.parse_args()
+class AAPDDataset(Dataset):
+    def __init__(self, annotations_file,):
+        data = pd.read_table(annotations_file, names=['Labels', 'contexts'])
+        self.labels = [[i == '1' for i in label] for label in data['Labels']]
+        self.contexts = [context.strip().split() for context in data['contexts']]
 
+    def __len__(self):
+        return len(self.contexts)
+
+    def __getitem__(self, idx):
+        return self.contexts[idx], self.labels[idx]
+
+def load_embedding():
+    if os.path.exists('vocab_npa.pkl') and (os.path.exists('embs_npa.npy')):
+        with open('vocab_npa.pkl','rb') as f:
+            vocab_npa = pickle.load(f)
+        with open('embs_npa.npy', 'rb') as f:
+            embs_npa = np.load(f)
+    else:
+        vocab_npa,embeddings = {},[]
+        #insert '<pad>' and '<unk>' tokens at start of vocab_npa.
+        vocab_npa['<pad>'] = 0
+        vocab_npa['<unk>'] = 1
+        id = 2
+        with open('./glove.840B.300d.txt','rt') as fi:
+            full_content = fi.readlines()
+        for i in trange(len(full_content)):
+            values = full_content[i].strip().split(' ')
+            i_word = values[0]
+            i_embeddings = np.asarray(values[-300:], "float32")
+            vocab_npa[i_word] = id
+            embeddings.append(i_embeddings)
+            id += 1
+        
+        embs_npa = np.array(embeddings)
+
+        pad_emb_npa = np.zeros((1,embs_npa.shape[1]))   #embedding for '<pad>' token.
+        unk_emb_npa = np.mean(embs_npa,axis=0,keepdims=True)    #embedding for '<unk>' token.
+
+        #insert embeddings for pad and unk tokens at top of embs_npa.
+        embs_npa = np.vstack((pad_emb_npa,unk_emb_npa,embs_npa))
+        with open('vocab_npa.pkl','wb') as f:
+            pickle.dump(vocab_npa, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        with open('embs_npa.npy','wb') as f:
+            np.save(f,embs_npa)
+    return vocab_npa, embs_npa
+
+def process_batch_input(data, args):
+    """
+       data: is a list of tuples with (example, label, length)
+             where 'example' is a tensor of arbitrary shape
+             and label/length are scalars
+    """
+    features, labels = zip(*data)
+    max_len = args.max_seq_length
+    processed = []
+    vocab_mapping = args.vocab_mapping
+    for context in features:
+        if len(context) >= max_len:
+            context = context[:max_len]
+        else:
+            context += ['<pad>'] * (max_len - len(context))
+        context_positions = [(vocab_mapping[term] if term in vocab_mapping else vocab_mapping['<unk>']) for term in context]
+        processed.append(context_positions)
+    features = torch.tensor(processed)
+
+    return features.int(), torch.tensor(labels).long()
 
 def saveVocabulary(name, vocab, file):
     print('Saving ' + name + ' vocabulary to \'' + file + '\'...')
@@ -135,19 +207,6 @@ def main():
     save_valid_src = './dev.npy'
     print('Preparing validation ...')
     valid = makeData(valid_src, embedding, save_valid_src)
-
-    # print('Preparing test ...')
-    # test = makeData(test_src, test_tgt, dicts['src'], dicts['tgt'], save_test_src, save_test_tgt)
-
-    # print('Saving source vocabulary to \'' + src_dict + '\'...')
-    # dicts['src'].writeFile(src_dict)
-
-    # print('Saving source vocabulary to \'' + tgt_dict + '\'...')
-    # dicts['tgt'].writeFile(tgt_dict)
-
-    # data = {'train': train, 'valid': valid,
-    #          'test': test, 'dict': dicts}
-    # pickle.dump(data, open(opt.save_data+'data.pkl', 'wb'))
 
 
 if __name__ == "__main__":

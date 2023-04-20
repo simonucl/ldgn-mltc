@@ -1,0 +1,1 @@
+CUDA_LAUNCH_BLOCKING=1 python train.py --batch_size 50 --epochs 50

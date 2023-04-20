@@ -10,39 +10,7 @@ import torch
 from tqdm import trange
 import os
 
-# parser = argparse.ArgumentParser(description='preprocess.py')
-
-# parser.add_argument('-load_data', type=str, required=True,
-#                     help="input file dir for the data")
-# parser.add_argument('-save_data', type=str, required=True,
-#                     help="output file dir for the processed data")
-
-# parser.add_argument('-src_vocab_size', type=int, default=50000,
-#                     help="size of the source vocabulary")
-# parser.add_argument('-tgt_vocab_size', type=int, default=50000,
-#                     help="size of the target vocabulary")
-# parser.add_argument('-src_filter', type=int, default=0,
-#                     help="maximum source sequence length")
-# parser.add_argument('-tgt_filter', type=int, default=0,
-#                     help="maximum target sequence length")
-# parser.add_argument('-src_trun', type=int, default=0,
-#                     help="truncate source sequence length")
-# parser.add_argument('-tgt_trun', type=int, default=0,
-#                     help="truncate target sequence length")
-# parser.add_argument('-src_char', action='store_true', 
-#                     help='character based encoding')
-# parser.add_argument('-tgt_char', action='store_true', 
-#                     help='character based decoding')
-# parser.add_argument('-src_suf', default='src',
-#                     help="the suffix of the source filename")
-# parser.add_argument('-tgt_suf', default='tgt',
-#                     help="the suffix of the target filename")
-
-# parser.add_argument('-share', action='store_true', 
-#                     help='share the vocabulary between source and target')
-
-# parser.add_argument('-report_every', type=int, default=100000,
-#                     help="report status every this many sentences")
+embedding_path = './embedding'
 
 # opt = parser.parse_args()
 class AAPDDataset(Dataset):
@@ -58,18 +26,21 @@ class AAPDDataset(Dataset):
         return self.contexts[idx], self.labels[idx]
 
 def load_embedding():
-    if os.path.exists('vocab_npa.pkl') and (os.path.exists('embs_npa.npy')):
-        with open('vocab_npa.pkl','rb') as f:
+    vocab_npa_path = os.path.join(embedding_path, 'vocab_npa.pkl')
+    embs_npa_path = os.path.join(embedding_path, 'embs_npa.npy')
+    if os.path.exists(vocab_npa_path) and (embs_npa_path):
+        with open(vocab_npa_path,'rb') as f:
             vocab_npa = pickle.load(f)
-        with open('embs_npa.npy', 'rb') as f:
+        with open(embs_npa_path, 'rb') as f:
             embs_npa = np.load(f)
     else:
+        glove_path = os.path.join(embedding_path, 'glove.840B.300d.txt')
         vocab_npa,embeddings = {},[]
         #insert '<pad>' and '<unk>' tokens at start of vocab_npa.
         vocab_npa['<pad>'] = 0
         vocab_npa['<unk>'] = 1
         id = 2
-        with open('./glove.840B.300d.txt','rt') as fi:
+        with open(glove_path,'rt') as fi:
             full_content = fi.readlines()
         for i in trange(len(full_content)):
             values = full_content[i].strip().split(' ')
@@ -86,10 +57,10 @@ def load_embedding():
 
         #insert embeddings for pad and unk tokens at top of embs_npa.
         embs_npa = np.vstack((pad_emb_npa,unk_emb_npa,embs_npa))
-        with open('vocab_npa.pkl','wb') as f:
+        with open(vocab_npa_path,'wb') as f:
             pickle.dump(vocab_npa, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-        with open('embs_npa.npy','wb') as f:
+        with open(embs_npa_path,'wb') as f:
             np.save(f,embs_npa)
     return vocab_npa, embs_npa
 
@@ -183,7 +154,9 @@ def main():
     #     os.makedirs(opt.save_data)
 
     dicts = {}
-    embedding = makeVocabMapping('./glove.840B.300d.txt')
+    glove_path = './embedding/glove.840B.300d.txt'
+
+    embedding = makeVocabMapping(glove_path)
 
     # if opt.share:
     #     assert opt.src_vocab_size == opt.tgt_vocab_size
@@ -202,7 +175,6 @@ def main():
     # print('Preparing training ...')
     # train = makeData(train_src, train_tgt, dicts['src'], dicts['tgt'], save_train_src, save_train_tgt)
 
-    glove = './glove.840B.300d.txt'
     valid_src = '../datasets/AAPD/dev.tsv'
     save_valid_src = './dev.npy'
     print('Preparing validation ...')

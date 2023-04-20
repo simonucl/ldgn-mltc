@@ -78,8 +78,6 @@ def load_data():
         valid_batch_size = opt.valid_batch_size
     else:
         valid_batch_size = opt.batch_size
-    print(valid_batch_size)
-    print(len(validset))
     validloader = torch.utils.data.DataLoader(dataset=validset,
                                               batch_size=valid_batch_size,
                                               shuffle=False,

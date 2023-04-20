@@ -127,6 +127,9 @@ class LDGB(torch.nn.Module):
     def forward(self, A, input):
         input_embeddings = self.embedding(input) # (batch_size, seq_len, embedding_size)
 
+        print(input_embeddings.shape)
+        print(self.lstm(input_embeddings, (None, None)).shape)
+        
         lstm_result = self.lstm(input_embeddings, (None, None)).reshape(self.batch_size, self.input_size*2, self.embedding_size) # (batch_size, 2*seq_len, embedding_size)
 
         h_0 = self.label_attention.forward(lstm_result) # (batch_size, label_size, embedding_size)

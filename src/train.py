@@ -26,10 +26,11 @@ warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser(description='train.py')
 # opts.model_opts(parser)
-parser.add_argument('--batch_size', default=1, required=False)
-parser.add_argument('--valid_batch_size', default=1, required=False)
-parser.add_argument('--max_seq_length', default=256, required=False)
-parser.add_argument('--seed', default=42, required=False)
+parser.add_argument('--batch_size', type=int, default=32, required=False)
+# parser.add_argument('--valid_batch_size', type=int, default=1, required=False)
+parser.add_argument('--max_seq_length', type=int, default=256, required=False)
+parser.add_argument('--seed', type=int, default=42, required=False)
+parser.add_argument('--epochs', type=int, default=10, required=False)
 
 opt = parser.parse_args()
 
@@ -77,6 +78,8 @@ def load_data():
         valid_batch_size = opt.valid_batch_size
     else:
         valid_batch_size = opt.batch_size
+    print(valid_batch_size)
+    print(len(validset))
     validloader = torch.utils.data.DataLoader(dataset=validset,
                                               batch_size=valid_batch_size,
                                               shuffle=False,
@@ -166,12 +169,12 @@ def build_model():
     model = LDGB(batch_size, opt.max_seq_length, embedding_size, hidden_size, label_size, opt.embedding)
     # outputs = model.forward(torch.tensor(A), lstm_out)
     
-    optim = torch.optim.Adam(model.parameters() ,lr=1e-3)
+    optim = torch.optim.Adam(model.parameters() ,lr=1e-4)
 
     return model, optim
 
 
-def train_model(model, data, optim, epoch, A):
+def train_model(model, data, optim, epochs, A):
 
     model.train()
     if use_cuda:
@@ -179,60 +182,63 @@ def train_model(model, data, optim, epoch, A):
     trainloader = data['trainloader']
     devloader = data['validloader']
 
-    write_after = 1000
+    write_after = 1000 // opt.batch_size
     counter = 0
     loss = 0
     prec_k = []
 
-    for contexts, labels in tqdm(trainloader, total=len(trainloader)):
-        model.train()
-        contexts = contexts.to(device)
-        A = A.to(device)
-        model = model.to(device)
 
-        output = model(A, contexts)
-        targets = torch.tensor([[float(label == 1) for label in batch_label] for batch_label in labels], dtype=torch.float32).to(device)
+    for epoch in range(1, epochs + 1):
+        print('Epoch %d' % epoch)
 
-        # print(output)
+        for contexts, labels in tqdm(trainloader, total=len(trainloader)):
+            model.train()
+            contexts = contexts.to(device)
+            A = A.to(device)
+            model = model.to(device)
 
-        loss_fn = torch.nn.BCELoss(reduction='sum')
+            output = model(A, contexts)
+            targets = torch.tensor([[float(label == 1) for label in batch_label] for batch_label in labels], dtype=torch.float32).to(device)
 
-        loss = loss_fn(output, targets.view(*output.shape))
+            loss_fn = torch.nn.BCELoss(reduction='sum')
 
-        optim.zero_grad()
-        loss.backward()
-        optim.step()
+            loss = loss_fn(output, targets.view(*output.shape))
 
-        # prec = precision_k(targets.view(1, 54).cpu().numpy(), output.view(1, 54).detach().cpu().numpy(), 5)
-        # prec_k.append(prec)
-        # loss = 0
-        counter += 1
-        if counter % write_after == 0:
-            # print(f'Prec@k:{np.array(prec_k).mean(axis=0)}')
-            prec_k = []
-            model.eval()
-            eval_loss = 0
-            count = 0
-            eval_precision = []
-            ndcg_k = []
-            for contexts, labels in devloader:
-                contexts = contexts.to(device)
-                model = model.to(device)
-                pred = model(A, contexts)
+            optim.zero_grad()
+            loss.backward()
+            optim.step()
 
-                # print(pred)
-                targets = np.array([[float(label == 1) for label in batched_label] for batched_label in labels])
+            # prec = precision_k(targets.view(1, 54).cpu().numpy(), output.view(1, 54).detach().cpu().numpy(), 5)
+            # prec_k.append(prec)
+            # loss = 0
+            counter += 1
+            if counter % write_after == 0:
+                # print(f'Prec@k:{np.array(prec_k).mean(axis=0)}')
+                prec_k = []
+                model.eval()
+                eval_loss = 0
+                count = 0
+                eval_precision = []
+                ndcg_k = []
+                for contexts, labels in devloader:
+                    print(contexts.shape)
+                    contexts = contexts.to(device)
+                    model = model.to(device)
+                    pred = model(A, contexts)
 
-                # print(targets.shape, pred.shape)
-                eval_precision.append(precision_k(targets, pred.detach().cpu().float().view(*targets.shape), 5))
-                # print(precision_k(targets, pred.detach().cpu().float(), 5))
-                eval_loss += loss_fn(pred.detach().cpu().float(), torch.tensor(targets, dtype=torch.float32).view(*pred.shape))
-                ndcg = Ndcg_k(targets, pred.detach().cpu().float().view(*targets.shape), 5)
-                ndcg_k.append(ndcg)
+                    # print(pred)
+                    targets = np.array([[float(label == 1) for label in batched_label] for batched_label in labels])
 
-                count += 1
-            print(f'P@k:{np.mean(eval_precision, axis=0)}')
-            print(f'DCG@k:{np.mean(ndcg_k, axis=0)}')
+                    # print(targets.shape, pred.shape)
+                    eval_precision.append(precision_k(targets, pred.detach().cpu().float().view(*targets.shape), 5))
+                    # print(precision_k(targets, pred.detach().cpu().float(), 5))
+                    eval_loss += loss_fn(pred.detach().cpu().float(), torch.tensor(targets, dtype=torch.float32).view(*pred.shape))
+                    ndcg = Ndcg_k(targets, pred.detach().cpu().float().view(*targets.shape), 5)
+                    ndcg_k.append(ndcg)
+
+                    count += 1
+                print(f'P@k:{np.mean(eval_precision, axis=0)}')
+                print(f'DCG@k:{np.mean(ndcg_k, axis=0)}')
             # print(f'Eval loss:{eval_loss / (count)}')
 
         # utils.progress_bar(params['updates'], config.eval_interval)
@@ -408,16 +414,4 @@ if __name__ == '__main__':
     opt.A = A
     model, optim = build_model()
 
-    # for param, name in model.named_parameters():
-    #     if name.requires_grad:
-    #         print(param)
-    # print(model)
-    # import sys
-    # sys.exit(1)
-    for epoch in range(1, 10+ 1):
-        train_model(model, data_dict, optim, epoch, A)
-    # for contexts, labels in data_dict['trainloader']:
-    #     for context in contexts:
-    #         print(model.forward(A, context))
-    #         break
-    #     break
+    train_model(model, data_dict, optim, opt.epochs, A)
